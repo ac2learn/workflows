@@ -1,0 +1,71 @@
+name: Cleanup old releases and tags (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      keep:
+        description: "保留最近多少个release (默认3个)"
+        required: false
+        type: string
+        default: "3"
+      dry-run:
+        description: "只打印将要删除的内容, 不实际删除"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      KEEP: ${{ inputs.keep }}
+      DRY_RUN: ${{ inputs.dry-run }}
+    steps:
+      - name: Delete old releases together with their tags
+        run: |
+          # 1) 只取"发布用的 tag", 按命名规则过滤(YYYYMMDD 或 v 开头版本号)
+          #    这样绝不会误伤 latest / nightly / stable 等别的工具链依赖的 tag
+          gh release list \
+            --repo "$GITHUB_REPOSITORY" \
+            --limit 200 \
+            --json tagName --jq '.[].tagName' \
+            | grep -E '^(v?[0-9])' \
+            | sort -r \
+            > all_release_tags.txt
+
+          # 2) 白名单：永不删除(按需增删)
+          grep -vE '^(latest|nightly|stable|beta|dev)$' all_release_tags.txt > candidates.txt || true
+
+          # 3) 跳过前 KEEP 个, 剩下的就是要删的
+          old_tags=$(tail -n "+$((KEEP + 1))" candidates.txt)
+
+          echo "All release tags:"
+          cat all_release_tags.txt
+          echo "Candidates for deletion:"
+          cat candidates.txt
+
+          if [ -z "$old_tags" ]; then
+            echo "Nothing to clean up."
+            exit 0
+          fi
+
+          echo "Will delete:"
+          echo "$old_tags"
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run enabled, skip actual deletion."
+            exit 0
+          fi
+
+          # 4) release 与其 tag 一次性原子删除, 杜绝"有 release 无 tag"的半残状态
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "Deleting release+tag: $tag"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag \
+              || gh api --method DELETE "/repos/$GITHUB_REPOSITORY/git/refs/tags/$tag" || true
+            echo "Done: $tag"
+          done <<< "$old_tags"
