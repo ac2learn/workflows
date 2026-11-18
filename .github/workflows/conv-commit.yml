@@ -1,4 +1,4 @@
-name: Conventional commit (reusable)
+name: Conventional commit (Reusable)
 
 on:
   workflow_call: {}

@@ -1,4 +1,4 @@
-name: Cleanup old releases and tags (reusable)
+name: Cleanup old releases and tags (Reusable)
 
 on:
   workflow_call:

@@ -1,0 +1,53 @@
+name: Auto-merge Dependabot PRs (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      pr_url:
+        description: "PR 的 html_url"
+        required: true
+        type: string
+      pr_author:
+        description: "PR 创建者的 login"
+        required: true
+        type: string
+    secrets:
+      token:
+        description: "用于 approve / merge 的 token (默认 GITHUB_TOKEN)"
+        required: false
+
+permissions:
+  # contents: about change repos something
+  # Push and Merge Commits (PRs)
+  contents: write
+  # pull-requests: about change PRs something
+  # Add and Update PRs
+  pull-requests: write
+  actions: write
+
+jobs:
+  auto-merge:
+    name: Auto Merge PRs
+    runs-on: ubuntu-latest
+    # 只有 dependabot 的 PR 才执行
+    if: inputs.pr_author == 'dependabot[bot]'
+    steps:
+      - name: Approve PR
+        env:
+          PR_URL: ${{ inputs.pr_url }}
+          GH_TOKEN: ${{ secrets.token || secrets.GITHUB_TOKEN }}
+        run: gh pr review --approve "$PR_URL"
+
+      - name: Enable auto-merge
+        env:
+          PR_URL: ${{ inputs.pr_url }}
+          GH_TOKEN: ${{ secrets.token || secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+#   github.actor == 'dependabot[bot]' ||
+#   github.triggering_actor == 'dependabot[bot]' ||
+#   github.event.pull_request.user.login == 'dependabot[bot]'
+#
+# github.actor 代表最初触发事件的用户 (如果手动触发工作流, 则为手动触发的用户)
+# github.triggering_actor 代表触发工作流的用户 (如果手动触发工作流, 则不变, 仍为dependabot)
+# github.event.pull_request.user.login 代表 PR 的创建者
